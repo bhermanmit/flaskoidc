@@ -70,7 +70,6 @@ def loggedOut():
 
 @app.route("/logout")
 def logout():
-    # https://stackoverflow.com/a/72011979/2746323
     id_token = session["user"]["id_token"]
     session.clear()
     return redirect(

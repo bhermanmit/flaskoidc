@@ -20,12 +20,11 @@ appConf = {
 app = Flask(__name__)
 app.secret_key = appConf.get("FLASK_SECRET")
 
+discovery = requests.get(appConf.get("OAUTH2_ISSUER") + "/.well-known/openid-configuration").json()
+
 client = OAuth2Session(
     client_id=appConf.get("OAUTH2_CLIENT_ID"),
     client_secret=appConf.get("OAUTH2_CLIENT_SECRET"),
-    authorization_endpoint=appConf.get("OAUTH2_ISSUER") + "/protocol/openid-connect/auth",
-    token_endpoint=appConf.get("OAUTH2_ISSUER") + "/protocol/openid-connect/token",
-    revocation_endpoint=appConf.get("OAUTH2_ISSUER") + "/protocol/openid-connect/revoke",
     scope="openid profile email",
     redirect_uri="http://localhost:3000/callback",
 )
@@ -41,13 +40,14 @@ def home():
 
 @app.route("/callback")
 def callback():
-    token_endpoint = appConf.get("OAUTH2_ISSUER") + "/protocol/openid-connect/token" 
+    token_endpoint = discovery["token_endpoint"]
     token = client.fetch_token(token_endpoint, authorization_response=request.url)
     certs = requests.get(appConf.get("OAUTH2_ISSUER") + "/protocol/openid-connect/certs")
     access = jwt.decode(token['access_token'], certs.json())
     id = jwt.decode(token['id_token'], certs.json())
+    userinfo_endpoint = discovery["userinfo_endpoint"]
     headers = {"Authorization": f"Bearer {token['access_token']}"}
-    user_info = requests.get(appConf.get("OAUTH2_ISSUER") + "/protocol/openid-connect/userinfo", headers=headers)
+    user_info = requests.get(userinfo_endpoint, headers=headers)
     session["user"] = {}
     session["user"]["access"] = access
     session["user"]["id"] = id
@@ -58,17 +58,15 @@ def callback():
 
 @app.route("/login")
 def login():
-    # check if session already present
     session.pop("user", None)
     if "user" in session:
         abort(404)
-    authurl = client.create_authorization_url(appConf.get("OAUTH2_ISSUER") + "/protocol/openid-connect/auth")
+    authurl = client.create_authorization_url(discovery["authorization_endpoint"])
     return redirect(authurl[0])
 
 
 @app.route("/loggedout")
 def loggedOut():
-    # check if session already present
     if "user" in session:
         abort(404)
     return redirect(url_for("home"))
@@ -76,12 +74,11 @@ def loggedOut():
 
 @app.route("/logout")
 def logout():
-    # https://stackoverflow.com/a/72011979/2746323
     id_token = session["user"]["token"]["id_token"]
     session.clear()
     return redirect(
-        appConf.get("OAUTH2_ISSUER")
-        + "/protocol/openid-connect/logout?"
+        discovery["end_session_endpoint"]
+        + "?"
         + urlencode(
             {
                 "post_logout_redirect_uri": url_for("loggedOut", _external=True),

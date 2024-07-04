@@ -1,13 +1,13 @@
-"""Python Flask WebApp OAuth 2.0 Authorization code flow example using Requests
+"""Python Flask WebApp OAuth 2.0 Authorization code flow example
 """
 
 import json
 from urllib.parse import quote_plus, urlencode
 
 import requests
-from authlib.integrations.requests_client import OAuth2Session
+from authlib.integrations.flask_client import OAuth
 from authlib.jose import jwt
-from flask import Flask, abort, redirect, render_template, request, session, url_for
+from flask import Flask, abort, redirect, render_template, session, url_for
 
 appConf = {
     "OAUTH2_CLIENT_ID": "flask",
@@ -20,14 +20,18 @@ appConf = {
 app = Flask(__name__)
 app.secret_key = appConf.get("FLASK_SECRET")
 
-discovery = requests.get(appConf.get("OAUTH2_ISSUER") + "/.well-known/openid-configuration").json()
-
-client = OAuth2Session(
+oauth = OAuth(app)
+oauth.register(
+    "myApp",
     client_id=appConf.get("OAUTH2_CLIENT_ID"),
     client_secret=appConf.get("OAUTH2_CLIENT_SECRET"),
-    scope="openid profile email",
-    redirect_uri="http://localhost:3000/callback",
+    client_kwargs={
+        "scope": "openid profile email",
+        # 'code_challenge_method': 'S256'  # enable PKCE
+    },
+    server_metadata_url=f'{appConf.get("OAUTH2_ISSUER")}/.well-known/openid-configuration',
 )
+
 
 @app.route("/")
 def home():
@@ -40,19 +44,13 @@ def home():
 
 @app.route("/callback")
 def callback():
-    token_endpoint = discovery["token_endpoint"]
-    token = client.fetch_token(token_endpoint, authorization_response=request.url)
+    token = oauth.myApp.authorize_access_token()
     certs = requests.get(appConf.get("OAUTH2_ISSUER") + "/protocol/openid-connect/certs")
     access = jwt.decode(token['access_token'], certs.json())
     id = jwt.decode(token['id_token'], certs.json())
-    userinfo_endpoint = discovery["userinfo_endpoint"]
-    headers = {"Authorization": f"Bearer {token['access_token']}"}
-    user_info = requests.get(userinfo_endpoint, headers=headers)
-    session["user"] = {}
-    session["user"]["access"] = access
-    session["user"]["id"] = id
-    session["user"]["token"] = token
-    session["user"]["userinfo"] = user_info.json()
+    token['access'] = access
+    token['id'] = id
+    session["user"] = token
     return redirect(url_for("home"))
 
 
@@ -60,8 +58,7 @@ def callback():
 def login():
     if "user" in session:
         abort(404)
-    authurl = client.create_authorization_url(discovery["authorization_endpoint"])
-    return redirect(authurl[0])
+    return oauth.myApp.authorize_redirect(redirect_uri=url_for("callback", _external=True))
 
 
 @app.route("/loggedout")
@@ -73,11 +70,12 @@ def loggedOut():
 
 @app.route("/logout")
 def logout():
-    id_token = session["user"]["token"]["id_token"]
+    # https://stackoverflow.com/a/72011979/2746323
+    id_token = session["user"]["id_token"]
     session.clear()
     return redirect(
-        discovery["end_session_endpoint"]
-        + "?"
+        appConf.get("OAUTH2_ISSUER")
+        + "/protocol/openid-connect/logout?"
         + urlencode(
             {
                 "post_logout_redirect_uri": url_for("loggedOut", _external=True),

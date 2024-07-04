@@ -20,7 +20,7 @@ tab.
 In order for the application to use keycloak you must create a Client in the realm. To do this, select `Client` on the left and give it a name called `flask` in this example. This is the client ID. Click `Next` and on the new screen turn on `Client authentication` and only have `Standard flow` selected for `Authentication flow` and click `Next`. On the next screen the only fields you need to enter are `Valid redirect URIs` and `Valid post logout redirect URIs`. They are as follows in this example:
 
 - **Valid redirect URIs**: `http://localhost:3000/callback`
-- **Valid post logout redirect URIs**: `http://localhost:3000/loggedOut`
+- **Valid post logout redirect URIs**: `http://localhost:3000/loggedout`
 
 Click `Next` to finish the process. Once finished you should be on the screen representing this new client. You can click on the `Credentials` tab to get the client secret which we will need to put in the Python files.
 
